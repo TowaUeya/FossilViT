@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,8 @@ LOGGER = logging.getLogger(__name__)
 
 def load_geometry(path: Path) -> o3d.geometry.Geometry:
     suffix = path.suffix.lower()
+    point_cloud_suffixes = {".ply", ".pcd", ".pts", ".xyz", ".xyzn", ".xyzrgb"}
+
     if suffix in {".obj", ".stl"}:
         mesh = o3d.io.read_triangle_mesh(str(path))
         if mesh.is_empty():
@@ -19,15 +22,48 @@ def load_geometry(path: Path) -> o3d.geometry.Geometry:
         mesh.compute_vertex_normals()
         return mesh
 
+    if suffix == ".off":
+        mesh = o3d.io.read_triangle_mesh(str(path))
+        if not mesh.is_empty() and len(mesh.triangles) > 0:
+            mesh.compute_vertex_normals()
+            return mesh
+
+        try:
+            raw_text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            raw_text = ""
+
+        first_line, has_newline, rest = raw_text.partition("\n")
+        if first_line.startswith("OFF") and len(first_line) > 3 and first_line[3].isdigit():
+            normalized = f"OFF\n{first_line[3:]}\n{rest}" if has_newline else f"OFF\n{first_line[3:]}\n"
+            tmp_path: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile("w", suffix=".off", delete=False, encoding="utf-8") as tmp:
+                    tmp.write(normalized)
+                    tmp_path = Path(tmp.name)
+
+                LOGGER.warning("OFF header normalized fallback used: %s", path)
+                mesh = o3d.io.read_triangle_mesh(str(tmp_path))
+                if not mesh.is_empty() and len(mesh.triangles) > 0:
+                    mesh.compute_vertex_normals()
+                    return mesh
+            finally:
+                if tmp_path is not None:
+                    tmp_path.unlink(missing_ok=True)
+
+        raise ValueError("failed to read geometry as mesh/point cloud")
+
     mesh = o3d.io.read_triangle_mesh(str(path))
     if not mesh.is_empty() and len(mesh.triangles) > 0:
         mesh.compute_vertex_normals()
         return mesh
 
-    pcd = o3d.io.read_point_cloud(str(path))
-    if pcd.is_empty():
-        raise ValueError("failed to read geometry as mesh/point cloud")
-    return pcd
+    if suffix in point_cloud_suffixes:
+        pcd = o3d.io.read_point_cloud(str(path))
+        if not pcd.is_empty():
+            return pcd
+
+    raise ValueError("failed to read geometry as mesh/point cloud")
 
 
 def get_points(geom: o3d.geometry.Geometry) -> np.ndarray:
