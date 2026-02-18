@@ -63,7 +63,7 @@ def render_specimen(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render multi-view PNG images from 3D meshes/point clouds.")
-    parser.add_argument("--in", dest="input_dir", type=Path, required=True, help="Input directory with .ply/.obj/.stl")
+    parser.add_argument("--in", dest="input_dir", type=Path, required=True, help="Input directory with .ply/.obj/.stl/.off")
     parser.add_argument("--out", dest="output_dir", type=Path, required=True, help="Output directory for rendered PNGs")
     parser.add_argument("--views", type=int, default=12)
     parser.add_argument("--size", type=int, default=384)
