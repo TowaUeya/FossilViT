@@ -45,7 +45,7 @@ def main() -> None:
         LOGGER.warning("No render images found: %s", args.renders)
         return
 
-    grouped = group_renders_by_specimen(render_files)
+    grouped = group_renders_by_specimen(render_files, root_dir=args.renders)
     transform = build_transform(args.image_size, args.crop_size)
     device = resolve_device(args.device)
     model = load_model(args.model, device)
@@ -75,6 +75,7 @@ def main() -> None:
 
         feature_arr = np.concatenate(feats, axis=0)
         out_path = args.out / f"{sid}.npy"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(out_path, feature_arr.astype(np.float32))
 
     LOGGER.info("Feature extraction finished for %d specimens", len(grouped))

@@ -66,13 +66,14 @@ python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/
 
 - `--device auto` を指定すると、CUDAが使える環境ではGPU、無ければCPUを自動選択します。
 - すべてのスクリプトは `python -m src.<module>` で実行可能です（`__main__` 対応）。
+- 入力ディレクトリはサブディレクトリまで再帰的に探索します。
 - 乱数シードは各CLIの `--seed` で固定できます。
 
 ## 生成物
 
-- `data/renders/*.png`: 各標本の多視点レンダ画像（`<specimen_id>_viewXX.png`）
-- `data/features/<specimen_id>.npy`: 標本単位の特徴行列 `[V, D]`
-- `data/embeddings/<specimen_id>.npy`: 視点統合後の埋め込み `[D]`
+- `data/renders/**/*.png`: 各標本の多視点レンダ画像（入力メッシュのカテゴリ階層を維持し、`<specimen_id>_viewXX.png`で保存）
+- `data/features/**/*.npy`: 標本単位の特徴行列 `[V, D]`（レンダ画像と同じカテゴリ階層を維持）
+- `data/embeddings/**/*.npy`: 視点統合後の埋め込み `[D]`（featuresの階層を維持）
 - `data/embeddings/embeddings.npy`: 全標本の埋め込み `[N, D]`
 - `data/embeddings/ids.txt`: `embeddings.npy` の行順に対応するID
 - `results/clusters.csv`: クラスタリング結果（`specimen_id, cluster_id, prob/score`）

@@ -33,7 +33,7 @@ def ensure_dir(path: Path) -> Path:
 def list_mesh_files(input_dir: Path) -> List[Path]:
     return sorted(
         p
-        for p in input_dir.iterdir()
+        for p in input_dir.rglob("*")
         if p.is_file() and p.suffix.lower() in MESH_EXTENSIONS
     )
 
@@ -41,7 +41,7 @@ def list_mesh_files(input_dir: Path) -> List[Path]:
 def list_image_files(input_dir: Path) -> List[Path]:
     return sorted(
         p
-        for p in input_dir.iterdir()
+        for p in input_dir.rglob("*")
         if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg"}
     )
 
@@ -50,18 +50,29 @@ def stem(path: Path) -> str:
     return path.stem
 
 
-def specimen_id_from_render(render_path: Path) -> str:
+def specimen_id_from_render(render_path: Path, root_dir: Path | None = None) -> str:
     # expected: {specimen_id}_viewXX.png
-    name = render_path.stem
+    if root_dir is not None:
+        path_for_id = render_path.relative_to(root_dir)
+    else:
+        path_for_id = render_path
+
+    name = path_for_id.stem
     if "_view" in name:
-        return name.rsplit("_view", 1)[0]
-    return name
+        base = name.rsplit("_view", 1)[0]
+    else:
+        base = name
+
+    rel_parent = path_for_id.parent
+    if str(rel_parent) == ".":
+        return base
+    return str(rel_parent / base)
 
 
-def group_renders_by_specimen(render_files: Iterable[Path]) -> dict[str, list[Path]]:
+def group_renders_by_specimen(render_files: Iterable[Path], root_dir: Path | None = None) -> dict[str, list[Path]]:
     grouped: dict[str, list[Path]] = {}
     for fp in render_files:
-        sid = specimen_id_from_render(fp)
+        sid = specimen_id_from_render(fp, root_dir=root_dir)
         grouped.setdefault(sid, []).append(fp)
     for sid in grouped:
         grouped[sid] = sorted(grouped[sid])
