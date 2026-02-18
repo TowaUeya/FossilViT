@@ -11,6 +11,13 @@ import open3d as o3d
 LOGGER = logging.getLogger(__name__)
 
 
+def _normalize_off_header(raw_text: str) -> str | None:
+    first_line, has_newline, rest = raw_text.partition("\n")
+    if first_line.startswith("OFF") and len(first_line) > 3 and first_line[3].isdigit():
+        return f"OFF\n{first_line[3:]}\n{rest}" if has_newline else f"OFF\n{first_line[3:]}\n"
+    return None
+
+
 def load_geometry(path: Path) -> o3d.geometry.Geometry:
     suffix = path.suffix.lower()
     point_cloud_suffixes = {".ply", ".pcd", ".pts", ".xyz", ".xyzn", ".xyzrgb"}
@@ -23,33 +30,30 @@ def load_geometry(path: Path) -> o3d.geometry.Geometry:
         return mesh
 
     if suffix == ".off":
-        mesh = o3d.io.read_triangle_mesh(str(path))
-        if not mesh.is_empty() and len(mesh.triangles) > 0:
-            mesh.compute_vertex_normals()
-            return mesh
-
         try:
             raw_text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             raw_text = ""
 
-        first_line, has_newline, rest = raw_text.partition("\n")
-        if first_line.startswith("OFF") and len(first_line) > 3 and first_line[3].isdigit():
-            normalized = f"OFF\n{first_line[3:]}\n{rest}" if has_newline else f"OFF\n{first_line[3:]}\n"
-            tmp_path: Path | None = None
-            try:
+        normalized = _normalize_off_header(raw_text)
+        candidate_path = path
+        tmp_path: Path | None = None
+
+        try:
+            if normalized is not None:
                 with tempfile.NamedTemporaryFile("w", suffix=".off", delete=False, encoding="utf-8") as tmp:
                     tmp.write(normalized)
                     tmp_path = Path(tmp.name)
-
+                candidate_path = tmp_path
                 LOGGER.warning("OFF header normalized fallback used: %s", path)
-                mesh = o3d.io.read_triangle_mesh(str(tmp_path))
-                if not mesh.is_empty() and len(mesh.triangles) > 0:
-                    mesh.compute_vertex_normals()
-                    return mesh
-            finally:
-                if tmp_path is not None:
-                    tmp_path.unlink(missing_ok=True)
+
+            mesh = o3d.io.read_triangle_mesh(str(candidate_path))
+            if not mesh.is_empty() and len(mesh.triangles) > 0:
+                mesh.compute_vertex_normals()
+                return mesh
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
 
         raise ValueError("failed to read geometry as mesh/point cloud")
 
