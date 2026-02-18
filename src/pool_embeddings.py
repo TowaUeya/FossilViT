@@ -37,7 +37,11 @@ def main() -> None:
     set_seed(args.seed)
     ensure_dir(args.out)
 
-    feature_files = sorted(args.features.glob("*.npy"))
+    feature_files = sorted(
+        fp
+        for fp in args.features.rglob("*.npy")
+        if fp.name not in {"embeddings.npy"}
+    )
     if not feature_files:
         LOGGER.warning("No feature files in %s", args.features)
         return
@@ -45,7 +49,7 @@ def main() -> None:
     all_embs = []
     all_ids = []
     for fp in tqdm(feature_files, desc="Pooling"):
-        sid = fp.stem
+        sid = str(fp.relative_to(args.features).with_suffix(""))
         try:
             feat = np.load(fp)
             emb = pool_features(feat, args.pool).astype(np.float32)
@@ -53,7 +57,9 @@ def main() -> None:
             LOGGER.exception("Failed to pool %s: %s", fp, e)
             continue
 
-        np.save(args.out / f"{sid}.npy", emb)
+        out_path = args.out / f"{sid}.npy"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(out_path, emb)
         all_embs.append(emb)
         all_ids.append(sid)
 

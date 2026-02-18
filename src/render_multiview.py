@@ -17,6 +17,7 @@ LOGGER = logging.getLogger(__name__)
 def render_specimen(
     renderer: o3d.visualization.rendering.OffscreenRenderer,
     mesh_path: Path,
+    input_root: Path,
     out_dir: Path,
     views: int,
     size: int,
@@ -24,7 +25,10 @@ def render_specimen(
     light_color: tuple[float, float, float],
     light_intensity: float,
 ) -> bool:
-    sid = mesh_path.stem
+    mesh_rel = mesh_path.relative_to(input_root)
+    sid = mesh_rel.stem
+    specimen_out_dir = out_dir / mesh_rel.parent
+    ensure_dir(specimen_out_dir)
     try:
         geom = normalize_geometry(load_geometry(mesh_path))
     except Exception as e:
@@ -53,7 +57,7 @@ def render_specimen(
         try:
             renderer.setup_camera(60.0, center, eye, up)
             img = renderer.render_to_image()
-            out_path = out_dir / f"{sid}_view{i:02d}.png"
+            out_path = specimen_out_dir / f"{sid}_view{i:02d}.png"
             o3d.io.write_image(str(out_path), img)
         except Exception as e:
             ok = False
@@ -90,6 +94,7 @@ def main() -> None:
         if render_specimen(
             renderer=renderer,
             mesh_path=mesh_path,
+            input_root=args.input_dir,
             out_dir=args.output_dir,
             views=args.views,
             size=args.size,
