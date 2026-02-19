@@ -128,7 +128,7 @@ python -m src.search_all \
 - `data/knn_results/ammonite/knn_ammonite_0001.csv`
 - `data/knn_results/trilobite/knn_trilobite_0012.csv`
 
-カテゴリごとに「top-k近傍のカテゴリ一致率」を集計したい場合は、`search_all.log` を除外して `knn_*.csv` のみを読み取る次のコマンドを利用できます。
+カテゴリごとに「top-k近傍のカテゴリ一致率」を集計したい場合は、 `knn_*.csv` を読み取る次のコマンドを利用できます。
 
 ```bash
 python -m src.knn_category_stats \
