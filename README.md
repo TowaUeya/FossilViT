@@ -110,10 +110,6 @@ QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
 python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
 ```
 
-> `--query` は `data/embeddings/ids.txt` に存在するIDを指定してください（カテゴリ名はデータセット依存です）。
-> 固定で `airplane/...` を書くのではなく、上記のように `ids.txt` から実在IDを読むと安全です。
-> `000` のような短すぎる値は複数候補に一致して曖昧になるためエラーになります。
-
 ### C. オプション: クラスタリング
 
 #### 1) PCAなし（まずは素で試す）
