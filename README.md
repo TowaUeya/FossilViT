@@ -55,6 +55,7 @@ pip install open3d scikit-learn hdbscan timm numpy pandas Pillow tqdm PyYAML
 ## 実行例（CLI）
 
 ```bash
+GALLIUM_DRIVER=d3d12
 python -m src.render_multiview --in data/meshes --out data/renders --views 12 --size 768
 python -m src.extract_features --renders data/renders --out data/features --model dinov2_vits14 --device cuda
 python -m src.pool_embeddings --features data/features --out data/embeddings --pool mean
