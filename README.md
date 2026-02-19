@@ -34,6 +34,7 @@ project_root/
   data/renders/
   data/features/
   data/embeddings/
+  data/knn_results/
   results/
   src/
     render_multiview.py
@@ -110,6 +111,24 @@ QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
 python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
 ```
 
+全標本を網羅的に評価する場合は、`while read ...` ループより `python` 側で一括実行する方が高速です。
+次のコマンドは、カテゴリ階層を維持したまま標本ごとのCSVを `data/knn_results/` に保存し、実行ログも同ディレクトリに出力します。
+
+```bash
+python -m src.search_all \
+  --emb data/embeddings/embeddings.npy \
+  --ids data/embeddings/ids.txt \
+  --topk 10 \
+  --metric cosine \
+  --out data/knn_results
+```
+
+出力例:
+
+- `data/knn_results/search_all.log`
+- `data/knn_results/ammonite/knn_ammonite_0001.csv`
+- `data/knn_results/trilobite/knn_trilobite_0012.csv`
+
 ### C. オプション: クラスタリング
 
 #### 1) PCAなし（まずは素で試す）
@@ -157,6 +176,8 @@ python -m src.cluster --emb data/embeddings/embeddings.npy --out results --metho
 - `data/embeddings/**/*.npy`: 視点統合後の埋め込み `[D]`（featuresの階層を維持）
 - `data/embeddings/embeddings.npy`: 全標本の埋め込み `[N, D]`
 - `data/embeddings/ids.txt`: `embeddings.npy` の行順に対応するID
+- `data/knn_results/**/*.csv`: 全標本の近傍検索結果（カテゴリ階層を維持して標本ごとに保存）
+- `data/knn_results/search_all.log`: 全標本近傍検索の実行ログ
 - `results/clusters.csv`: クラスタリング結果（`specimen_id, cluster_id, prob/score`）
 - `results/knn_<query_id>.csv`: 近傍検索結果（`query_id, neighbor_id, distance`）
 - `results/pca_report.csv`: PCAレポート（`component, explained_variance_ratio, cumulative`）
