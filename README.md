@@ -81,15 +81,15 @@ pip install open3d scikit-learn hdbscan timm numpy pandas Pillow tqdm PyYAML
 
 > すべて `python -m src.<module>` 形式で実行できます。
 
-### A. 必須: 埋め込み生成
+### 1) 最小必須: 埋め込み生成（render → features → pool）
 
-#### 1) 多視点レンダ
+#### 1-1) 多視点レンダ
 
 ```bash
 python -m src.render_multiview --in data/meshes --out data/renders --views 12 --size 768
 ```
 
-#### 2) DINOv2特徴抽出
+#### 1-2) DINOv2特徴抽出
 
 ```bash
 python -m src.extract_features --renders data/renders --out data/features --model dinov2_vits14 --device cuda
@@ -98,13 +98,13 @@ python -m src.extract_features --renders data/renders --out data/features --mode
 - DINOv2は `torch.hub.load('facebookresearch/dinov2', '<model_name>')` でロードされます（例: `dinov2_vits14`）。
 - 初回実行時は `torch.hub` によるモデルダウンロードが発生するため、ネットワーク接続が必要です。
 
-#### 3) 視点統合（標本埋め込み生成）
+#### 1-3) 視点統合（標本埋め込み生成）
 
 ```bash
 python -m src.pool_embeddings --features data/features --out data/embeddings --pool mean
 ```
 
-### B. オプション（推奨）: 近傍検索
+### 2) 推奨: 近傍検索（kNN）
 
 ```bash
 QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
@@ -122,58 +122,67 @@ python -m src.search_all \
   --out data/knn_results
 ```
 
-出力例:
+### 3) 任意: クラスタリング（HDBSCAN）
 
-- `data/knn_results/search_all.log`
-- `data/knn_results/ammonite/knn_ammonite_0001.csv`
-- `data/knn_results/trilobite/knn_trilobite_0012.csv`
-
-カテゴリごとに「top-k近傍のカテゴリ一致率」を集計したい場合は、 `knn_*.csv` を読み取る次のコマンドを利用できます。
+#### まずはこれ（推奨設定）
 
 ```bash
-python -m src.knn_category_stats \
-  --knn_dir data/knn_results \
-  --out results/knn_category_summary.csv \
-  --per_query_out results/knn_per_query_match_rate.csv
+python -m src.cluster --emb data/embeddings/embeddings.npy --out results \
+  --method hdbscan --normalize l2 --metric cosine --pca 64 \
+  --min_cluster_size 10 --min_samples 1 --cluster_selection_method leaf \
+  --pca_report results/pca_report.csv
 ```
 
-`results/knn_category_summary.csv` にはカテゴリごとに以下の統計量が出力されます。
+- `--normalize l2` + `--metric cosine` をクラスタリングのデフォルトにしています。
+- `--pca 64` はクラスタリングの安定化に使いやすい固定次元です。
 
-- `n_queries`: そのカテゴリに属するクエリ標本数
-- `mean_match_rate`: 一致率の平均（0〜1）
-- `std_match_rate`, `var_match_rate`: 一致率の標準偏差・分散
-- `min/q25/median/q75/max_match_rate`: 一致率の分布統計
-- `mean_match_percent`, `std_match_percent`: パーセント表示の平均・標準偏差
+#### ノイズ（cluster_id=-1）が多いときの手順（蒸着なし）
 
-### C. オプション: クラスタリング
-
-#### 1) PCAなし（まずは素で試す）
+1. `--min_samples` を下げる（例: `2 → 1`）
+2. `--min_cluster_size` を下げる（例: `20 → 10 → 5`）
+3. `--cluster_selection_method leaf` を使う（細かく切ってノイズを減らせることがある）
+4. それでも難しい場合のみ、クラスタリング専用前処理として `PCA(50) + UMAP(15)` を試す
 
 ```bash
-python -m src.cluster --emb data/embeddings/embeddings.npy --out results --method hdbscan
+python -m src.cluster --emb data/embeddings/embeddings.npy --out results \
+  --method hdbscan --normalize l2 --metric cosine --pca 50 \
+  --umap --umap_n_components 15 --umap_n_neighbors 30 --umap_min_dist 0.0 --umap_metric cosine \
+  --min_cluster_size 10 --min_samples 1 --cluster_selection_method leaf
 ```
 
-#### 2) PCAあり（ノイズが多い/不安定なら推奨）
+> UMAPは局所構造を強調できる一方で、クラスタ構造自体を歪める可能性もあります。困ったときに比較検証する「任意オプション」として使ってください。
 
-- 固定次元（例: 64次元）
-
-```bash
-python -m src.cluster --emb data/embeddings/embeddings.npy --out results --method hdbscan --pca 64 --pca_report results/pca_report.csv
-```
-
-- 累積寄与率しきい値（例: 95%以上を満たす最小次元数を自動採用）
-
-```bash
-python -m src.cluster --emb data/embeddings/embeddings.npy --out results --method hdbscan --pca 0.95 --pca_report results/pca_report.csv
-```
-
-`--pca` は次のように解釈されます。
+#### PCAの解釈と注意
 
 - `--pca` 未指定 / `--pca 0`: PCAなし
 - `--pca 64`: 固定64次元
 - `--pca 0.95`: 累積寄与率95%以上になる最小次元数を自動採用
 
+`--pca 0.95` の「95%保持」は情報保持の目安であり、クラスタリング適性を保証する指標ではありません。次元が高く残りすぎる場合、HDBSCANでは `--pca 64` のような固定次元のほうが安定するケースがあります。
+
 `--pca_report` を指定すると、`component, explained_variance_ratio, cumulative` を含むCSVが保存されます。
+
+#### パラメータスイープ（推奨）
+
+```bash
+python -m src.cluster_sweep --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --out results/sweep
+```
+
+- `sweep_results.csv`: 各設定の `noise_ratio / n_clusters / mean_prob / score` を保存
+- `best_config.yaml`: ベスト設定を保存
+- `best_clusters.csv`: ベスト設定のクラスタ割当を保存
+- `--labels <file>` を渡すと、可能な範囲で `ARI / NMI / purity` も算出します。
+
+### 4) フルパイプライン（例）
+
+```bash
+python -m src.render_multiview --in data/meshes --out data/renders --views 12 --size 768
+python -m src.extract_features --renders data/renders --out data/features --model dinov2_vits14 --device cuda
+python -m src.pool_embeddings --features data/features --out data/embeddings --pool mean
+QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
+python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
+python -m src.cluster --emb data/embeddings/embeddings.npy --out results --method hdbscan --normalize l2 --metric cosine --pca 64 --min_cluster_size 10 --min_samples 1 --cluster_selection_method leaf
+```
 
 ## FAQ
 
@@ -195,8 +204,12 @@ python -m src.cluster --emb data/embeddings/embeddings.npy --out results --metho
 - `data/knn_results/**/*.csv`: 全標本の近傍検索結果（カテゴリ階層を維持して標本ごとに保存）
 - `data/knn_results/search_all.log`: 全標本近傍検索の実行ログ
 - `results/clusters.csv`: クラスタリング結果（`specimen_id, cluster_id, prob/score`）
+- `results/summary.json`: クラスタリングサマリ（`n_total, n_noise, noise_ratio, n_clusters, mean_prob` など）
 - `results/knn_<query_id>.csv`: 近傍検索結果（`query_id, neighbor_id, distance`）
 - `results/pca_report.csv`: PCAレポート（`component, explained_variance_ratio, cumulative`）
+- `results/sweep/sweep_results.csv`: スイープ各設定の評価一覧
+- `results/sweep/best_config.yaml`: スイープ最良設定
+- `results/sweep/best_clusters.csv`: スイープ最良設定のクラスタリング結果
 
 ## 実装上のポイント
 
