@@ -111,7 +111,6 @@ QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
 python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
 ```
 
-全標本を網羅的に評価する場合は、`while read ...` ループより `python` 側で一括実行する方が高速です。
 次のコマンドは、カテゴリ階層を維持したまま標本ごとのCSVを `data/knn_results/` に保存し、実行ログも同ディレクトリに出力します。
 
 ```bash
