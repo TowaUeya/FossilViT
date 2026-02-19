@@ -128,6 +128,23 @@ python -m src.search_all \
 - `data/knn_results/ammonite/knn_ammonite_0001.csv`
 - `data/knn_results/trilobite/knn_trilobite_0012.csv`
 
+カテゴリごとに「top-k近傍のカテゴリ一致率」を集計したい場合は、`search_all.log` を除外して `knn_*.csv` のみを読み取る次のコマンドを利用できます。
+
+```bash
+python -m src.knn_category_stats \
+  --knn_dir data/knn_results \
+  --out results/knn_category_summary.csv \
+  --per_query_out results/knn_per_query_match_rate.csv
+```
+
+`results/knn_category_summary.csv` にはカテゴリごとに以下の統計量が出力されます。
+
+- `n_queries`: そのカテゴリに属するクエリ標本数
+- `mean_match_rate`: 一致率の平均（0〜1）
+- `std_match_rate`, `var_match_rate`: 一致率の標準偏差・分散
+- `min/q25/median/q75/max_match_rate`: 一致率の分布統計
+- `mean_match_percent`, `std_match_percent`: パーセント表示の平均・標準偏差
+
 ### C. オプション: クラスタリング
 
 #### 1) PCAなし（まずは素で試す）
