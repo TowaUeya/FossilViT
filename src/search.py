@@ -26,6 +26,41 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_query_id(ids: list[str], query: str) -> tuple[int, str]:
+    """Resolve query string to a unique specimen id in `ids`."""
+    if query in ids:
+        return ids.index(query), query
+
+    basename_matches = [sid for sid in ids if sid.rsplit("/", 1)[-1] == query]
+    if len(basename_matches) == 1:
+        resolved = basename_matches[0]
+        return ids.index(resolved), resolved
+
+    suffix_matches = [sid for sid in ids if sid.endswith(f"_{query}")]
+    if len(suffix_matches) == 1:
+        resolved = suffix_matches[0]
+        return ids.index(resolved), resolved
+
+    if query.isdigit():
+        padded = query.zfill(4)
+        padded_matches = [sid for sid in ids if sid.endswith(f"_{padded}")]
+        if len(padded_matches) == 1:
+            resolved = padded_matches[0]
+            return ids.index(resolved), resolved
+
+        prefix_matches = [sid for sid in ids if sid.endswith(f"_{query}") or sid.endswith(f"_{padded}")]
+        if not prefix_matches:
+            prefix_matches = [sid for sid in ids if sid.rsplit("_", 1)[-1].startswith(query)]
+        if len(prefix_matches) > 1:
+            preview = ", ".join(prefix_matches[:5])
+            raise ValueError(
+                f"query id is ambiguous: {query}. candidates (first 5): {preview}. "
+                "Please provide a full id like 'airplane/airplane_0001'."
+            )
+
+    raise ValueError(f"query id not found: {query}. Try a full id from --ids file.")
+
+
 def main() -> None:
     args = parse_args()
     setup_logging()
@@ -43,10 +78,7 @@ def main() -> None:
     else:
         X_work = X.astype(np.float32)
 
-    try:
-        q_idx = ids.index(args.query)
-    except ValueError as e:
-        raise ValueError(f"query id not found: {args.query}") from e
+    q_idx, resolved_query = resolve_query_id(ids, args.query)
 
     nn = NearestNeighbors(metric=metric)
     nn.fit(X_work)
@@ -58,15 +90,15 @@ def main() -> None:
     for dist, idx in zip(distances[0], indices[0]):
         if idx == q_idx:
             continue
-        rows.append({"query_id": args.query, "neighbor_id": ids[idx], "distance": float(dist)})
+        rows.append({"query_id": resolved_query, "neighbor_id": ids[idx], "distance": float(dist)})
         if len(rows) >= args.topk:
             break
 
     df = pd.DataFrame(rows)
-    out_csv = args.out / f"knn_{args.query}.csv"
+    out_csv = args.out / f"knn_{resolved_query.replace('/', '_')}.csv"
     df.to_csv(out_csv, index=False)
 
-    LOGGER.info("Top-%d neighbors for %s", len(df), args.query)
+    LOGGER.info("Top-%d neighbors for %s", len(df), resolved_query)
     for _, row in df.iterrows():
         LOGGER.info("neighbor=%s distance=%.6f", row["neighbor_id"], row["distance"])
     LOGGER.info("Saved %s", out_csv)
