@@ -66,7 +66,7 @@ python -m src.extract_features --renders data/renders --out data/features --mode
 python -m src.pool_embeddings --features data/features --out data/embeddings --pool mean
 ```
 
-### 2) 推奨（まず価値が出る：類似検索）
+### 2) 推奨（類似検索）
 
 ```bash
 python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query 000 --topk 10 --metric cosine --out results
@@ -82,7 +82,7 @@ python -m src.cluster --emb data/embeddings/embeddings.npy --out results --metho
   --cluster_selection_method leaf --pca_report results/pca_report.csv
 ```
 
-#### 困ったら試す（UMAPを追加）
+#### 困ったら（UMAPを追加）
 
 ```bash
 python -m src.cluster --emb data/embeddings/embeddings.npy --out results --method hdbscan \
@@ -131,8 +131,7 @@ python -m src.cluster_sweep --emb data/embeddings/embeddings.npy --ids data/embe
 
 ---
 
-## cluster_sweep の評価方針（ごまかせない評価）
-
+## cluster_sweep の評価方針
 `src.cluster_sweep` は、ノイズ率だけでなく以下を同時評価します。
 
 - `noise_ratio`
