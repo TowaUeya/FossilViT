@@ -11,15 +11,20 @@ import numpy as np
 import pandas as pd
 import yaml
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
+from tqdm import tqdm
 
 from src.cluster import infer_ids, preprocess_for_clustering, run_hdbscan
 from src.utils.io import ensure_dir, set_seed, setup_logging
 
 LOGGER = logging.getLogger(__name__)
 
+# Giant mixed-cluster guardrails
+GIANT_CLUSTER_THRESHOLD = 0.12
+GIANT_CLUSTER_PENALTY_SCALE = 2.0
+
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Sweep HDBSCAN parameters for lower noise ratio")
+    parser = argparse.ArgumentParser(description="Sweep HDBSCAN parameters with robust scoring")
     parser.add_argument("--emb", type=Path, required=True, help="Path to embeddings.npy")
     parser.add_argument("--ids", type=Path, required=True, help="Path to ids.txt")
     parser.add_argument("--out", type=Path, required=True, help="Output directory for sweep results")
@@ -39,13 +44,32 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def infer_labels_from_ids(ids: list[str]) -> np.ndarray | None:
+    inferred: list[str] = []
+    for specimen_id in ids:
+        if "/" not in specimen_id:
+            return None
+        inferred.append(specimen_id.split("/")[0])
+    return np.array(inferred, dtype=object)
+
+
 def load_labels(path: Path | None, ids: list[str]) -> np.ndarray | None:
-    if path is None or not path.exists():
-        return None
+    if path is None:
+        inferred = infer_labels_from_ids(ids)
+        if inferred is not None:
+            LOGGER.info("No --labels specified. Inferred labels from specimen_id prefix before '/'.")
+        else:
+            LOGGER.info("No --labels specified and specimen_id-based inference is unavailable.")
+        return inferred
+
+    if not path.exists():
+        LOGGER.warning("labels file does not exist: %s", path)
+        return infer_labels_from_ids(ids)
 
     rows = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not rows:
-        return None
+        LOGGER.warning("labels file is empty: %s", path)
+        return infer_labels_from_ids(ids)
 
     if "\t" in rows[0] or "," in rows[0]:
         sep = "\t" if "\t" in rows[0] else ","
@@ -55,32 +79,40 @@ def load_labels(path: Path | None, ids: list[str]) -> np.ndarray | None:
             if len(cols) < 2:
                 continue
             mapping[cols[0]] = cols[1]
-        return np.array([mapping.get(sid, "") for sid in ids], dtype=object)
+        labels = np.array([mapping.get(sid, "") for sid in ids], dtype=object)
+        if np.all(labels == ""):
+            LOGGER.warning("No labels matched ids from mapping file: %s", path)
+            return infer_labels_from_ids(ids)
+        return labels
 
     if len(rows) != len(ids):
-        LOGGER.warning("labels count mismatch (%d vs %d). labels will be skipped", len(rows), len(ids))
-        return None
+        LOGGER.warning("labels count mismatch (%d vs %d). Falling back to ID inference.", len(rows), len(ids))
+        return infer_labels_from_ids(ids)
+
     return np.array(rows, dtype=object)
 
 
 def purity_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    mask = y_pred != -1
-    if np.sum(mask) == 0:
-        return 0.0
-
-    y_true = y_true[mask]
-    y_pred = y_pred[mask]
+    if len(y_true) == 0:
+        return float("nan")
     labels = np.unique(y_pred)
     total = len(y_true)
     correct = 0
     for c in labels:
-        idx = y_pred == c
-        members = y_true[idx]
+        members = y_true[y_pred == c]
         if len(members) == 0:
             continue
-        values, counts = np.unique(members, return_counts=True)
-        correct += int(counts[np.argmax(counts)])
-    return float(correct / total if total else 0.0)
+        _, counts = np.unique(members, return_counts=True)
+        correct += int(np.max(counts))
+    return float(correct / total if total else float("nan"))
+
+
+def _largest_cluster_fraction(labels: np.ndarray) -> float:
+    non_noise = labels[labels != -1]
+    if len(non_noise) == 0:
+        return 0.0
+    _, counts = np.unique(non_noise, return_counts=True)
+    return float(np.max(counts) / len(non_noise))
 
 
 def evaluate_config(X: np.ndarray, labels: np.ndarray, probs: np.ndarray, y_true: np.ndarray | None) -> dict[str, float]:
@@ -90,18 +122,45 @@ def evaluate_config(X: np.ndarray, labels: np.ndarray, probs: np.ndarray, y_true
     noise_ratio = float(n_noise / n_total if n_total else 1.0)
     mean_prob = float(np.mean(probs)) if len(probs) else 0.0
 
-    penalty = 0.0
+    largest_cluster_fraction = _largest_cluster_fraction(labels)
+    giant_cluster_penalty = max(0.0, (largest_cluster_fraction - GIANT_CLUSTER_THRESHOLD) * GIANT_CLUSTER_PENALTY_SCALE)
+
+    penalty_for_too_many_clusters = 0.0
     if n_clusters <= 1:
-        penalty += 0.3
+        penalty_for_too_many_clusters += 0.25
     if n_clusters > max(2, int(np.sqrt(max(n_total, 1))) * 3):
-        penalty += 0.2
+        penalty_for_too_many_clusters += 0.15
+
+    ari = float("nan")
+    nmi = float("nan")
+    purity = float("nan")
+    if y_true is not None:
+        try:
+            mask = (labels != -1) & (y_true != "")
+            if np.sum(mask) > 1:
+                ari = float(adjusted_rand_score(y_true[mask], labels[mask]))
+                nmi = float(normalized_mutual_info_score(y_true[mask], labels[mask]))
+                purity = float(purity_score(y_true[mask], labels[mask]))
+        except Exception:
+            LOGGER.exception("Failed to compute external validation metrics. Set to NaN.")
+
+    final_score = (1.0 - noise_ratio) + 0.2 * mean_prob - giant_cluster_penalty - penalty_for_too_many_clusters
+    if not np.isnan(nmi):
+        final_score += 0.5 * nmi
+    if not np.isnan(ari):
+        final_score += 0.3 * ari
 
     metrics: dict[str, float] = {
         "noise_ratio": noise_ratio,
         "n_clusters": float(n_clusters),
         "mean_prob": mean_prob,
-        "penalty": penalty,
-        "score": (1.0 - noise_ratio) + 0.2 * mean_prob - penalty,
+        "largest_cluster_fraction": largest_cluster_fraction,
+        "giant_cluster_penalty": giant_cluster_penalty,
+        "penalty_for_too_many_clusters": penalty_for_too_many_clusters,
+        "ari": ari,
+        "nmi": nmi,
+        "purity": purity,
+        "final_score": float(final_score),
     }
 
     try:
@@ -111,16 +170,6 @@ def evaluate_config(X: np.ndarray, labels: np.ndarray, probs: np.ndarray, y_true
     except Exception:
         metrics["dbcv"] = float("nan")
 
-    if y_true is not None:
-        mask = (labels != -1) & (y_true != "")
-        if np.sum(mask) > 1:
-            metrics["ari"] = float(adjusted_rand_score(y_true[mask], labels[mask]))
-            metrics["nmi"] = float(normalized_mutual_info_score(y_true[mask], labels[mask]))
-            metrics["purity"] = float(purity_score(y_true[mask], labels[mask]))
-        else:
-            metrics["ari"] = float("nan")
-            metrics["nmi"] = float("nan")
-            metrics["purity"] = float("nan")
     return metrics
 
 
@@ -181,6 +230,7 @@ def main() -> None:
     X = np.load(args.emb)
     if X.ndim != 2:
         raise ValueError(f"embeddings must be 2D [N,D], got {X.shape}")
+
     ids = infer_ids(args.emb, X.shape[0], args.ids)
     y_true = load_labels(args.labels, ids)
 
@@ -189,15 +239,17 @@ def main() -> None:
     best_row: dict[str, Any] | None = None
     best_df: pd.DataFrame | None = None
 
-    grid = itertools.product(
-        args.pca_values,
-        args.min_cluster_sizes,
-        args.min_samples_values,
-        args.selection_methods,
-        args.umap_options,
+    grid = list(
+        itertools.product(
+            args.pca_values,
+            args.min_cluster_sizes,
+            args.min_samples_values,
+            args.selection_methods,
+            args.umap_options,
+        )
     )
 
-    for pca, min_cluster_size, min_samples, selection_method, umap_opt in grid:
+    for pca, min_cluster_size, min_samples, selection_method, umap_opt in tqdm(grid, desc="sweep"):
         use_umap = umap_opt == "on"
         config = {
             "pca": pca,
@@ -230,8 +282,13 @@ def main() -> None:
                 "noise_ratio": 1.0,
                 "n_clusters": 0.0,
                 "mean_prob": 0.0,
-                "penalty": 1.0,
-                "score": -1.0,
+                "largest_cluster_fraction": 0.0,
+                "giant_cluster_penalty": 0.0,
+                "penalty_for_too_many_clusters": 1.0,
+                "ari": float("nan"),
+                "nmi": float("nan"),
+                "purity": float("nan"),
+                "final_score": -1.0,
                 "dbcv": float("nan"),
             }
             df = pd.DataFrame({"specimen_id": ids, "cluster_id": np.full(len(ids), -1), "prob": np.zeros(len(ids))})
@@ -239,12 +296,12 @@ def main() -> None:
         row = {**config, **metrics}
         rows.append(row)
 
-        if metrics["score"] > best_score:
-            best_score = float(metrics["score"])
+        if metrics["final_score"] > best_score:
+            best_score = float(metrics["final_score"])
             best_row = row
             best_df = df
 
-    result_df = pd.DataFrame(rows).sort_values("score", ascending=False)
+    result_df = pd.DataFrame(rows).sort_values("final_score", ascending=False)
     sweep_csv = args.out / "sweep_results.csv"
     result_df.to_csv(sweep_csv, index=False)
     LOGGER.info("Saved sweep results to %s", sweep_csv)
@@ -263,7 +320,7 @@ def main() -> None:
     summary_path = args.out / "summary.json"
     summary = {
         "n_trials": len(rows),
-        "best_score": best_score,
+        "best_final_score": best_score,
         "best_config": best_row,
     }
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
