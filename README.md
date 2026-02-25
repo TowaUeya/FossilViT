@@ -69,7 +69,8 @@ python -m src.pool_embeddings --features data/features --out data/embeddings --p
 ### 2) 推奨（類似検索）
 
 ```bash
-python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query 000 --topk 10 --metric cosine --out results
+QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
+python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
 ```
 
 ### 3) 任意（クラスタリング）
