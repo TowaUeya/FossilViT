@@ -73,6 +73,23 @@ QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
 python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
 ```
 
+次のコマンドは、カテゴリ階層を維持したまま標本ごとのCSVを `data/knn_results/` に保存し、実行ログも同ディレクトリに出力します。
+
+```bash
+python -m src.search_all \
+  --emb data/embeddings/embeddings.npy \
+  --ids data/embeddings/ids.txt \
+  --topk 10 \
+  --metric cosine \
+  --out data/knn_results
+```
+
+出力例:
+
+- `data/knn_results/search_all.log`
+- `data/knn_results/ammonite/knn_ammonite_0001.csv`
+- `data/knn_results/trilobite/knn_trilobite_0012.csv`
+
 カテゴリごとに「top-k近傍のカテゴリ一致率」を集計したい場合は、`search_all.log` を除外して `knn_*.csv` のみを読み取る次のコマンドを利用できます。
 
 ```bash
