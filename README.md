@@ -61,7 +61,7 @@ pip install -r requirements.txt
 ### 1) 必須（最低限、埋め込み生成まで）
 
 ```bash
-python -m src.render_multiview --in data/meshes --out data/renders --views 12 --size 768
+python -m src.render_multiview --in data/meshes --out data/renders --views 24 --size 768
 python -m src.extract_features --renders data/renders --out data/features --model dinov2_vits14 --device auto
 python -m src.pool_embeddings --features data/features --out data/embeddings --pool mean
 ```
