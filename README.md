@@ -73,6 +73,23 @@ QUERY_ID=$(head -n 1 data/embeddings/ids.txt)
 python -m src.search --emb data/embeddings/embeddings.npy --ids data/embeddings/ids.txt --query "$QUERY_ID" --topk 10 --metric cosine --out results
 ```
 
+カテゴリごとに「top-k近傍のカテゴリ一致率」を集計したい場合は、`search_all.log` を除外して `knn_*.csv` のみを読み取る次のコマンドを利用できます。
+
+```bash
+python -m src.knn_category_stats \
+  --knn_dir data/knn_results \
+  --out results/knn_category_summary.csv \
+  --per_query_out results/knn_per_query_match_rate.csv
+```
+
+`results/knn_category_summary.csv` にはカテゴリごとに以下の統計量が出力されます。
+
+- `n_queries`: そのカテゴリに属するクエリ標本数
+- `mean_match_rate`: 一致率の平均（0〜1）
+- `std_match_rate`, `var_match_rate`: 一致率の標準偏差・分散
+- `min/q25/median/q75/max_match_rate`: 一致率の分布統計
+- `mean_match_percent`, `std_match_percent`: パーセント表示の平均・標準偏差
+
 ### 3) 任意（クラスタリング）
 
 #### まずはこれ（推奨設定）
