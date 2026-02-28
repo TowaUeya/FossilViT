@@ -274,8 +274,11 @@ def run(args: argparse.Namespace) -> int:
                 selected_png,
                 "HDBSCAN Condensed Tree (Selected Clusters)",
             )
-        except TypeError:
-            LOGGER.warning("label_clusters argument not supported; fallback without label_clusters")
+        except Exception as exc:
+            LOGGER.warning(
+                "Failed plotting selected clusters with label_clusters=True; fallback without labels: %s",
+                exc,
+            )
             _save_tree_plot(
                 lambda: clusterer.condensed_tree_.plot(select_clusters=True),
                 selected_png,
