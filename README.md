@@ -273,7 +273,22 @@ python -m src.plot_hdbscan_trees \
 - `results/trees/condensed_tree.png`
 - `results/trees/condensed_tree_selected.png`
 - `results/trees/single_linkage_tree.png`（`--skip_single` で省略可）
+- `results/trees/single_linkage_tree_with_leaf_labels.png`（全リーフに3Dモデル名を表示）
+- `results/trees/single_linkage_tree_with_leaf_labels.pdf`（全リーフに3Dモデル名を表示）
+- `results/trees/single_linkage_tree_with_leaf_labels.html`（生成可能な場合のみ。対話的に拡大/移動可能）
 - 可能なら木構造CSV: `condensed_tree.csv`, `single_linkage_tree.csv`
+
+巨大データでフルラベル版が重すぎる場合は、次で無効化できます。
+
+```bash
+python -m src.plot_hdbscan_trees --skip_single_leaf_labels
+```
+
+形式の使い分け目安:
+
+- **HTML**: 巨大dendrogramを拡大・移動しながら確認したいとき（第一候補）
+- **PDF**: 共有・印刷向けの保存版
+- **PNG**: 手早い確認向け
 
 > 補足: `sweep_results.csv` で `umap=True` かつ `pca<=0` の設定が選ばれた場合、
 > `cluster_sweep` と同じ挙動に合わせて内部的に `pca=50` を適用します。
