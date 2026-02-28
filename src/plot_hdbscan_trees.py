@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from scipy.cluster.hierarchy import dendrogram
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import numpy as np
@@ -44,6 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
 
     parser.add_argument("--skip_single", action="store_true", help="Skip single_linkage_tree plotting")
+    parser.add_argument(
+        "--skip_single_leaf_labels",
+        action="store_true",
+        help="Skip single_linkage_tree plotting with all leaf labels (3D model names)",
+    )
     return parser.parse_args()
 
 
@@ -113,6 +119,67 @@ def _save_tree_plot(plot_fn: Any, out_path: Path, title: str) -> None:
         LOGGER.info("Saved plot: %s", out_path)
     finally:
         plt.close(fig)
+
+
+def _save_single_linkage_leaf_labeled(
+    clusterer: Any,
+    leaf_labels: list[str],
+    out_dir: Path,
+    title: str,
+) -> None:
+    linkage = np.asarray(clusterer.single_linkage_tree_.to_numpy())
+    if linkage.ndim != 2 or linkage.shape[1] != 4:
+        raise ValueError(f"single linkage matrix must have shape [N-1,4], got {linkage.shape}")
+
+    n_leaves = len(leaf_labels)
+    if linkage.shape[0] != max(0, n_leaves - 1):
+        raise ValueError(
+            f"single linkage row count and label count mismatch: linkage_rows={linkage.shape[0]}, labels={n_leaves}"
+        )
+
+    fig_width = float(np.clip(n_leaves * 0.25, 24, 200))
+    fig, ax = plt.subplots(figsize=(fig_width, 10))
+    try:
+        dendrogram(
+            linkage,
+            labels=leaf_labels,
+            leaf_rotation=90,
+            leaf_font_size=4,
+            ax=ax,
+            distance_sort=False,
+            count_sort=False,
+        )
+        ax.set_title(title)
+        ax.set_ylabel("distance")
+        fig.tight_layout()
+
+        for ext in ["png", "pdf"]:
+            out_path = out_dir / f"single_linkage_tree_with_leaf_labels.{ext}"
+            fig.savefig(out_path, dpi=300, bbox_inches="tight")
+            LOGGER.info("Saved plot: %s", out_path)
+    finally:
+        plt.close(fig)
+
+    try:
+        import plotly.figure_factory as ff
+
+        fig_html = ff.create_dendrogram(
+            linkage,
+            labels=leaf_labels,
+            orientation="bottom",
+            color_threshold=None,
+        )
+        fig_html.update_layout(
+            title=title,
+            width=int(np.clip(n_leaves * 25, 1600, 22000)),
+            height=900,
+            xaxis={"tickangle": 90, "tickfont": {"size": 8}},
+        )
+        out_html = out_dir / "single_linkage_tree_with_leaf_labels.html"
+        fig_html.write_html(str(out_html), include_plotlyjs="cdn")
+        LOGGER.info("Saved plot: %s", out_html)
+    except Exception as exc:
+        LOGGER.warning("Failed to save single_linkage_tree_with_leaf_labels.html: %s", exc)
 
 
 def _save_condensed_tree_selected_safe(
@@ -345,6 +412,20 @@ def run(args: argparse.Namespace) -> int:
                 )
             except Exception as exc:
                 LOGGER.warning("Failed to plot single_linkage_tree.png (use --skip_single to disable): %s", exc)
+
+        if not args.skip_single_leaf_labels:
+            try:
+                _save_single_linkage_leaf_labeled(
+                    clusterer,
+                    leaf_labels=[str(x) for x in ids],
+                    out_dir=out_dir,
+                    title="HDBSCAN Single Linkage Tree (All Leaf Labels)",
+                )
+            except Exception as exc:
+                LOGGER.warning(
+                    "Failed to plot single_linkage_tree_with_leaf_labels.* (use --skip_single_leaf_labels to disable): %s",
+                    exc,
+                )
 
         _save_tree_plot(
             lambda axis: clusterer.condensed_tree_.plot(axis=axis),
