@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 import numpy as np
 import pandas as pd
 import yaml
@@ -104,10 +105,94 @@ def _format_list_table(ranked: pd.DataFrame, top: int) -> str:
 
 
 def _save_tree_plot(plot_fn: Any, out_path: Path, title: str) -> None:
-    fig, _ = plt.subplots(figsize=(12, 7))
+    fig, ax = plt.subplots(figsize=(12, 7))
     try:
-        plot_fn()
-        plt.title(title)
+        plot_fn(ax)
+        ax.set_title(title)
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        LOGGER.info("Saved plot: %s", out_path)
+    finally:
+        plt.close(fig)
+
+
+def _save_condensed_tree_selected_safe(
+    clusterer: Any,
+    out_path: Path,
+    title: str,
+    *,
+    label_clusters: bool = True,
+    leaf_separation: float = 1.0,
+    log_size: bool = False,
+    max_rectangles_per_icicle: int = 20,
+) -> None:
+    fig, ax = plt.subplots(figsize=(12, 7))
+    try:
+        clusterer.condensed_tree_.plot(
+            axis=ax,
+            select_clusters=False,
+            leaf_separation=leaf_separation,
+            log_size=log_size,
+            max_rectangles_per_icicle=max_rectangles_per_icicle,
+        )
+
+        plot_data = clusterer.condensed_tree_.get_plot_data(
+            leaf_separation=leaf_separation,
+            log_size=log_size,
+            max_rectangle_per_icicle=max_rectangles_per_icicle,
+        )
+        chosen_clusters = clusterer.condensed_tree_._select_clusters()
+
+        plot_range = np.hstack([plot_data["bar_tops"], plot_data["bar_bottoms"]])
+        finite_range = plot_range[np.isfinite(plot_range)]
+        if finite_range.size == 0:
+            finite_range = np.array([0.0, 1.0], dtype=float)
+
+        mean_y_center = float(np.mean([np.max(finite_range), np.min(finite_range)]))
+        max_height = float(np.percentile(finite_range, 90) - np.percentile(finite_range, 10))
+        if not np.isfinite(max_height) or max_height <= 0:
+            max_height = 1.0
+        min_height = 0.1 * max_height
+
+        for c in chosen_clusters:
+            c_bounds = plot_data["cluster_bounds"][c]
+            left, right, bottom, top = map(float, c_bounds)
+            width = right - left
+            height = top - bottom
+            center = (0.5 * (left + right), 0.5 * (top + bottom))
+
+            if not np.isfinite(center[1]):
+                center = (center[0], mean_y_center)
+            if not np.isfinite(height):
+                height = max_height
+            if height < min_height:
+                height = min_height
+            if not np.isfinite(width) or width <= 0:
+                width = 1.0
+
+            ellipse = Ellipse(
+                xy=center,
+                width=width,
+                height=height,
+                facecolor="none",
+                edgecolor="red",
+                linewidth=1.5,
+                alpha=0.9,
+            )
+            ax.add_artist(ellipse)
+
+            if label_clusters:
+                ax.annotate(
+                    f"cluster_id={c}",
+                    xy=center,
+                    xytext=(0, 6),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    color="red",
+                )
+
+        ax.set_title(title)
         fig.savefig(out_path, dpi=300, bbox_inches="tight")
         LOGGER.info("Saved plot: %s", out_path)
     finally:
@@ -254,7 +339,7 @@ def run(args: argparse.Namespace) -> int:
         if not args.skip_single:
             try:
                 _save_tree_plot(
-                    lambda: clusterer.single_linkage_tree_.plot(),
+                    lambda axis: clusterer.single_linkage_tree_.plot(axis=axis),
                     out_dir / "single_linkage_tree.png",
                     "HDBSCAN Single Linkage Tree",
                 )
@@ -262,28 +347,18 @@ def run(args: argparse.Namespace) -> int:
                 LOGGER.warning("Failed to plot single_linkage_tree.png (use --skip_single to disable): %s", exc)
 
         _save_tree_plot(
-            lambda: clusterer.condensed_tree_.plot(),
+            lambda axis: clusterer.condensed_tree_.plot(axis=axis),
             out_dir / "condensed_tree.png",
             "HDBSCAN Condensed Tree",
         )
 
         selected_png = out_dir / "condensed_tree_selected.png"
-        try:
-            _save_tree_plot(
-                lambda: clusterer.condensed_tree_.plot(select_clusters=True, label_clusters=True),
-                selected_png,
-                "HDBSCAN Condensed Tree (Selected Clusters)",
-            )
-        except Exception as exc:
-            LOGGER.warning(
-                "Failed plotting selected clusters with label_clusters=True; fallback without labels: %s",
-                exc,
-            )
-            _save_tree_plot(
-                lambda: clusterer.condensed_tree_.plot(select_clusters=True),
-                selected_png,
-                "HDBSCAN Condensed Tree (Selected Clusters)",
-            )
+        _save_condensed_tree_selected_safe(
+            clusterer,
+            selected_png,
+            "HDBSCAN Condensed Tree (Selected Clusters)",
+            label_clusters=True,
+        )
 
         LOGGER.info("Done. Output directory: %s", out_dir)
         return 0
