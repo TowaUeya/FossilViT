@@ -230,3 +230,50 @@ project_root/
 
 - 蒸着（ノイズ点を後段で強制割当）は、解析上の都合で最終手段としてのみ使用してください。
 - まずは `min_samples`・PCA固定次元・UMAP有無の見直しで密度構造を改善するのが正攻法です。
+
+
+
+## HDBSCANの説明図（dendrogram / icicle plot）
+
+`cluster_sweep` の探索結果（`sweep_results.csv`）を唯一の設定ソースとして、
+`single_linkage_tree_` / `condensed_tree_` を画像・CSVで出力できます。
+
+引数なし（デフォルトパス + `final_score` 最大設定を自動選択）:
+
+```bash
+python -m src.plot_hdbscan_trees
+```
+
+探索結果の上位20件を番号付きで一覧:
+
+```bash
+python -m src.plot_hdbscan_trees --list --top 20
+```
+
+`rank=3` の設定で説明図を生成:
+
+```bash
+python -m src.plot_hdbscan_trees --pick 3
+```
+
+パスだけ指定（デフォルト以外）:
+
+```bash
+python -m src.plot_hdbscan_trees \
+  --emb data/embeddings/embeddings.npy \
+  --ids data/embeddings/ids.txt \
+  --sweep_csv results/sweep/sweep_results.csv \
+  --out results/trees
+```
+
+主な出力:
+
+- `results/trees/selected_config.yaml`（選択行 + 実行時グローバル設定 + パス）
+- `results/trees/labels.csv`（`specimen_id, cluster_id, prob`）
+- `results/trees/condensed_tree.png`
+- `results/trees/condensed_tree_selected.png`
+- `results/trees/single_linkage_tree.png`（`--skip_single` で省略可）
+- 可能なら木構造CSV: `condensed_tree.csv`, `single_linkage_tree.csv`
+
+> 補足: `sweep_results.csv` で `umap=True` かつ `pca<=0` の設定が選ばれた場合、
+> `cluster_sweep` と同じ挙動に合わせて内部的に `pca=50` を適用します。
