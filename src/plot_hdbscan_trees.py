@@ -163,10 +163,14 @@ def _save_single_linkage_leaf_labeled(
     try:
         import plotly.figure_factory as ff
 
+        # create_dendrogram のXは観測行列であり、linkageはlinkagefunで注入する。
+        dummy_X = np.arange(n_leaves, dtype=float).reshape(-1, 1)
         fig_html = ff.create_dendrogram(
-            linkage,
+            dummy_X,
             labels=leaf_labels,
             orientation="bottom",
+            linkagefun=lambda _: linkage,
+            distfun=lambda x: x,
             color_threshold=None,
         )
         fig_html.update_layout(
@@ -176,8 +180,10 @@ def _save_single_linkage_leaf_labeled(
             xaxis={"tickangle": 90, "tickfont": {"size": 8}},
         )
         out_html = out_dir / "single_linkage_tree_with_leaf_labels.html"
-        fig_html.write_html(str(out_html), include_plotlyjs="cdn")
+        fig_html.write_html(str(out_html), include_plotlyjs="directory")
         LOGGER.info("Saved plot: %s", out_html)
+    except ImportError as exc:
+        LOGGER.warning("Plotly is not installed; skipping single_linkage_tree_with_leaf_labels.html: %s", exc)
     except Exception as exc:
         LOGGER.warning("Failed to save single_linkage_tree_with_leaf_labels.html: %s", exc)
 
