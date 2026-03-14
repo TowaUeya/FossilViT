@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--metric", choices=["cosine", "euclidean"], default="cosine")
     parser.add_argument("--umap_metric", choices=["cosine", "euclidean"], default="cosine")
     parser.add_argument("--pca_values", type=float, nargs="+", default=[0, 64, 0.95])
-    parser.add_argument("--min_cluster_sizes", type=int, nargs="+", default=[3, 5, 10, 20, 40])
+    parser.add_argument("--min_cluster_sizes", type=int, nargs="+", default=[5, 10, 20, 40])
     parser.add_argument("--min_samples_values", type=int, nargs="+", default=[1, 2, 5])
     parser.add_argument("--selection_methods", choices=["leaf", "eom"], nargs="+", default=["leaf", "eom"])
     parser.add_argument("--umap_options", choices=["off", "on"], nargs="+", default=["off", "on"])
