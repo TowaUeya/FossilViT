@@ -173,11 +173,24 @@ def _save_single_linkage_leaf_labeled(
             distfun=lambda x: x,
             color_threshold=None,
         )
+
+        # Plotly の対数軸では 0 を表示できないため、全トレースを微小量だけ持ち上げる。
+        positive_dist = linkage[:, 2][linkage[:, 2] > 0]
+        min_positive = float(np.min(positive_dist)) if positive_dist.size > 0 else 1e-6
+        y_shift = max(min_positive * 1e-3, 1e-12)
+        for trace in fig_html.data:
+            y = getattr(trace, "y", None)
+            if y is None:
+                continue
+            y_arr = np.asarray(y, dtype=float)
+            trace.y = (y_arr + y_shift).tolist()
+
         fig_html.update_layout(
             title=title,
             width=int(np.clip(n_leaves * 25, 1600, 22000)),
             height=900,
             xaxis={"tickangle": 90, "tickfont": {"size": 8}},
+            yaxis={"type": "log", "title": "distance (log scale)"},
         )
         out_html = out_dir / "single_linkage_tree_with_leaf_labels.html"
         fig_html.write_html(str(out_html), include_plotlyjs="directory")
